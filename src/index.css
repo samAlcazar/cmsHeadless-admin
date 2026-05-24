@@ -1,0 +1,12 @@
+@import "tailwindcss";
+
+:root {
+  --color-primary: #3b82f6;
+  --color-primary-dark: #2563eb;
+  --color-sidebar: #1e293b;
+  --color-sidebar-hover: #334155;
+}
+
+body {
+  @apply bg-gray-50 text-gray-900 antialiased;
+}
