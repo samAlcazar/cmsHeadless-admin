@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query'
 import { getContentTypes } from '../api/contentTypes'
 import { getFieldsByContentType } from '../api/fields'
-import { getEntry, createEntry, updateEntry } from '../api/entries'
+import { getEntries, getEntry, createEntry, updateEntry } from '../api/entries'
 import DynamicField from '../components/DynamicField'
 import { Button, Card, CardBody, Spinner } from '../components/ui'
 import { ArrowLeft, Save } from 'lucide-react'
@@ -33,8 +33,46 @@ export default function EntryFormPage() {
   })
 
   useEffect(() => {
-    if (entry?.data) setFormData(entry.data)
-  }, [entry])
+    if (isEditing && entry) setFormData(entry)
+  }, [entry, isEditing])
+
+  useEffect(() => {
+    if (fields && !isEditing) {
+      const initial = {}
+      fields.forEach((f) => {
+        if (f.default_value !== null && f.default_value !== undefined) {
+          initial[f.name] = f.default_value
+        } else if (f.is_list) {
+          initial[f.name] = []
+        } else if (f.field_type === 'boolean') {
+          initial[f.name] = false
+        } else {
+          initial[f.name] = ''
+        }
+      })
+      setFormData(initial)
+    }
+  }, [fields, isEditing])
+
+  const relationFields = (fields || []).filter(
+    (f) => f.field_type === 'relation' && f.relation_content_type_id
+  )
+
+  const relationQueries = useQueries({
+    queries: relationFields.map((f) => {
+      const relatedCt = contentTypes?.find((ct) => ct.id === f.relation_content_type_id)
+      return {
+        queryKey: ['entries', relatedCt?.name],
+        queryFn: () => getEntries(relatedCt.name),
+        enabled: !!relatedCt,
+      }
+    }),
+  })
+
+  const relatedEntriesMap = {}
+  relationFields.forEach((f, i) => {
+    relatedEntriesMap[f.name] = relationQueries[i]?.data || []
+  })
 
   const createMutation = useMutation({
     mutationFn: (data) => createEntry(contentType, data),
@@ -50,7 +88,7 @@ export default function EntryFormPage() {
     e.preventDefault()
     const newErrors = {}
     fields.forEach((f) => {
-      if (f.is_required && (formData[f.name] === undefined || formData[f.name] === '' || formData[f.name] === null)) {
+      if (f.is_required && (formData[f.name] === undefined || formData[f.name] === '' || formData[f.name] === null || (Array.isArray(formData[f.name]) && formData[f.name].length === 0))) {
         newErrors[f.name] = 'Este campo es requerido'
       }
     })
@@ -58,9 +96,9 @@ export default function EntryFormPage() {
     if (Object.keys(newErrors).length > 0) return
 
     if (isEditing) {
-      updateMutation.mutate({ data: formData })
+      updateMutation.mutate(formData)
     } else {
-      createMutation.mutate({ data: formData })
+      createMutation.mutate(formData)
     }
   }
 
@@ -89,6 +127,7 @@ export default function EntryFormPage() {
                 value={formData[field.name]}
                 onChange={(val) => setField(field.name, val)}
                 error={errors[field.name]}
+                relatedEntries={relatedEntriesMap[field.name]}
               />
             ))}
             {(!fields || fields.length === 0) && (
